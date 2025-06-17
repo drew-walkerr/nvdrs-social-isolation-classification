@@ -1,0 +1,1080 @@
+---
+title: "nvdrs_descriptives_predictions"
+author: "Drew Walker"
+date: "2024-01-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(table1)
+library(nlme)
+library(here)
+library(foreign)
+library(gt)
+library(scales)
+library(lme4)
+library(lubridate)
+library(sjPlot)
+library(sjmisc)
+library(patchwork)
+library(sjlabelled)
+library(data.table)
+library(broom)
+knitr::opts_chunk$set(echo = TRUE)
+here()
+options(scipen = 100)
+```
+
+# Read in data
+
+```{r data}
+nvdrs_predicted_df <- fread("nvdrs_merged_with_predictions.csv")
+## Predictors: Sex, AgeYears_c, RaceEthnicity_c, SexualOrientation, Homeless, HousingInstability "EducationYears", MaritalStatus, Transgender, RelationshipStatus, "PhysicalHealthProblem_c" ,"CrisisPhysicalHealth_c" , #"NumberSubstances_c"
+
+# Substance variables clean
+nvdrs_predicted_df$AmphetamineResult_clean <- ifelse(nvdrs_predicted_df$AmphetamineResult == "Present", 1, 0)
+nvdrs_predicted_df$OpiateResult_clean <- ifelse(nvdrs_predicted_df$OpiateResult == "Present", 1, 0)
+nvdrs_predicted_df$BarbituratesResult_clean <- ifelse(nvdrs_predicted_df$BarbituratesResult == "Present", 1, 0)
+nvdrs_predicted_df$BenzodiazepinesResult_clean <- ifelse(nvdrs_predicted_df$BenzodiazepinesResult == "Present", 1, 0)
+nvdrs_predicted_df$CocaineResult_clean <- ifelse(nvdrs_predicted_df$CocaineResult == "Present", 1, 0)
+nvdrs_predicted_df$MuscleRelaxantResult_clean <- ifelse(nvdrs_predicted_df$MuscleRelaxantResult == "Present", 1, 0)
+# 
+nvdrs_predicted_df$AgeYears_c
+### 
+dplyr::count(nvdrs_predicted_df, Sex, sort =TRUE)
+nvdrs_predicted_df_cleaned1 <- nvdrs_predicted_df %>% 
+  filter(Sex != "" & Sex != "Unknown")
+# colnames(nvdrs_predicted_df_cleaned1)  filter(SexualOrientation != "" & SexualOrientation != "Unknown")
+
+nvdrs_predicted_df$EducationYears <- as.numeric(nvdrs_predicted_df$EducationYears)
+table1(~Sex + AgeYears_c + RaceEthnicity_c+  SexualOrientation+Transgender+ EducationYears+ MaritalStatus+ RelationshipStatus + Homeless + NumberSubstances_c + PhysicalHealthProblem_c, data = nvdrs_predicted_df)
+
+nvdrs_predicted_df$CME_CircumstancesOtherText
+table1(~CME_CircumstancesOtherText + LE_CircumstancesOtherText, data = nvdrs_predicted_df)
+sum(is.na(nvdrs_predicted_df$LE_CircumstancesOtherText))
+
+LE_summaries <- nvdrs_predicted_df %>% 
+  filter(LE_CircumstancesOtherText != "")
+
+CME_summaries <- nvdrs_predicted_df %>% 
+  filter(CME_CircumstancesOtherText != "")
+
+```
+
+```{r clean-up}
+
+nvdrs_predicted_df_cleaned1$Sex <- as.factor(nvdrs_predicted_df_cleaned1$Sex)
+nvdrs_predicted_df_cleaned1$Sex <- relevel(nvdrs_predicted_df_cleaned1$Sex, ref = "Female")
+# nvdrs_predicted_df_cleaned1$social_isolation_prediction <- as.integer(nvdrs_predicted_df_cleaned1$social_isolation_prediction)
+## Sex
+
+```
+
+
+
+```{r eda-with-regex-and-predictions}
+
+
+# Now you can use nvdrs_predicted_df in your analyses with these variables as factors breakup_prediction child_prediction social_isolation_prediction pet_prediction `eviction or move_prediction`
+
+
+
+table1(~topic_name_breakup+ breakup_prediction+ topic_name_child+child_prediction+topic_name_social_isolation+ social_isolation_prediction+ topic_name_pet+pet_prediction+`topic_name_eviction or move`+ `eviction or move_prediction` + AmphetamineResult + OpiateResult + BarbituratesResult + BenzodiazepinesResult + CocaineResult + MuscleRelaxantResult, data = nvdrs_predicted_df)
+
+# nvdrs_predicted_df$AmphetamineResult
+# nvdrs_predicted_df$OpiateResult
+# nvdrs_predicted_df$BarbituratesResult
+# nvdrs_predicted_df$BenzodiazepinesResult
+# nvdrs_predicted_df$CocaineResult
+# nvdrs_predicted_df$MuscleRelaxantResult
+
+# Assuming nvdrs_predicted_df is your existing dataframe
+# Convert "Present" to 1 and any other value to 0 for each specified column
+
+
+```
+
+```{r correlation-matrices}
+# Create dataframe with only topic_name_ prefixed variables
+# removed pet due to all 0s
+df_topic_name <- nvdrs_predicted_df[, c("topic_name_breakup", "topic_name_child", "topic_name_social_isolation", "topic_name_eviction or move","topic_name_divorce")]
+
+# Create dataframe with only _prediction suffixed variables
+df_prediction <- nvdrs_predicted_df[, c("breakup_prediction", "child_prediction", "social_isolation_prediction", "eviction or move_prediction","divorce_prediction")]
+
+# Filter df_prediction for rows with at least one '1'
+df_prediction_filtered <- df_prediction[apply(df_prediction, 1, function(x) sum(x, na.rm = TRUE) > 0), ]
+
+
+# Check for constant columns
+constant_cols <- sapply(df_prediction, function(x) length(unique(na.omit(x))) == 1)
+
+# Optionally, remove constant columns from the dataframe
+df_prediction <- df_prediction[, !constant_cols]
+
+# Check for columns with high proportion of missing values
+# (You can set a threshold for what constitutes a "high proportion")
+high_na_cols <- sapply(df_prediction, function(x) mean(is.na(x)) > 0.5)
+
+
+```
+
+```{r correlations, eval = FALSE}
+# Recode, uising entire dataframe 
+# Compute Spearman's correlation matrix with p-values for df_prediction
+corr_matrix_prediction <- rcorr(as.matrix(df_predictio_filtered), type = "spearman")
+
+# Print the results
+print(corr_matrix_topic_name)
+print(corr_matrix_prediction)
+
+
+# Filtered
+filtered_corr_matrix_topic_name <- rcorr(as.matrix(df_topic_name_filtered), type = "spearman")
+
+# Compute Spearman's correlation matrix with p-values for df_prediction
+filtered_corr_matrix_prediction <- rcorr(as.matrix(df_prediction_filtered), type = "spearman")
+
+```
+
+```{r corrplots, eval=FALSE}
+# Recode, using entire dataframe
+# Install and load the corrplot package
+library(corrplot)
+library(Hmisc)
+# Assuming corr_matrix_topic_name and corr_matrix_prediction are already computed using rcorr
+
+# Plot for df_topic_name
+corrplot(corr_matrix_topic_name$r, method = "color", type = "upper", 
+         order = "hclust", addCoef.col = "black", 
+         tl.col = "black", tl.srt = 45, 
+         diag = FALSE, p.mat = corr_matrix_topic_name$P, sig.level = 0.05)
+
+# Compute correlation matrix with cor function
+corr_matrix_prediction <- cor(df_prediction, use = "complete.obs", method = "spearman")
+
+# Check the range of the new correlation matrix
+print(range(corr_matrix_prediction))
+
+# Plot the correlation matrix using corrplot
+corrplot(corr_matrix_prediction, method = "color", type = "upper", 
+         order = "hclust", addCoef.col = "black", 
+         tl.col = "black", tl.srt = 45, 
+         diag = FALSE)
+
+```
+```{r corrplot-filtered, eval=FALSE}
+# Compute Spearman's correlation matrix with p-values for df_prediction_filtered
+corr_matrix_prediction <- rcorr(as.matrix(df_prediction_filtered), type = "spearman")
+
+# Compute Spearman's correlation matrix with p-values for df_topic_name_filtered
+corr_matrix_topic_name <- rcorr(as.matrix(df_topic_name_filtered), type = "spearman")
+
+# Plot the correlation matrix for df_prediction_filtered
+corrplot(corr_matrix_prediction$r, method = "color", type = "upper", 
+         order = "hclust", addCoef.col = "black", 
+         tl.col = "black", tl.srt = 45, 
+         diag = FALSE, p.mat = corr_matrix_prediction$P, sig.level = 0.05)
+
+# Plot the correlation matrix for df_topic_name_filtered
+corrplot(corr_matrix_topic_name$r, method = "color", type = "upper", 
+         order = "hclust", addCoef.col = "black", 
+         tl.col = "black", tl.srt = 45, 
+         diag = FALSE, p.mat = corr_matrix_topic_name$P, sig.level = 0.05)
+
+```
+
+
+```{r substance-topic-prediction, eval = FALSE}
+# Social isolation
+#Amphetamines
+amphetamines_social_isolation <- glm(social_isolation_prediction ~ AmphetamineResult_clean, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(amphetamines_social_isolation)
+sjPlot::tab_model(amphetamines_social_isolation, transform = "exp", file = "amphetamines_social_isolation.html", digits = 4)
+# Opiates
+opiates_social_isolation <- glm(social_isolation_prediction ~ OpiateResult_clean, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(opiates_social_isolation)
+sjPlot::tab_model(opiates_social_isolation, transform = "exp", file = "opiates_social_isolation.html", digits = 4)
+
+# Barbiturates
+barbiturates_social_isolation <- glm(social_isolation_prediction ~ BarbituratesResult_clean, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(barbiturates_social_isolation)
+sjPlot::tab_model(barbiturates_social_isolation, transform = "exp", file = "barbiturates_social_isolation.html", digits = 4)
+
+# Benzodiazepines
+benzodiazepines_social_isolation <- glm(social_isolation_prediction ~ BenzodiazepinesResult_clean, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(benzodiazepines_social_isolation)
+sjPlot::tab_model(benzodiazepines_social_isolation, transform = "exp", file = "benzodiazepines_social_isolation.html", digits = 4)
+
+# Cocaine
+cocaine_social_isolation <- glm(social_isolation_prediction ~ CocaineResult_clean, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(cocaine_social_isolation)
+sjPlot::tab_model(cocaine_social_isolation, transform = "exp", file = "cocaine_social_isolation.html", digits = 4)
+
+# Muscle Relaxants
+
+muscle_relaxant_social_isolation <- glm(social_isolation_prediction ~ MuscleRelaxantResult_clean, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(muscle_relaxant_social_isolation)
+sjPlot::tab_model(muscle_relaxant_social_isolation, transform = "exp", file = "muscle_relaxant_social_isolation.html", digits = 4)
+
+
+
+# Divorce divorce_prediction
+sex_divorce_prediction <- glm(divorce_prediction ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_divorce_prediction)
+sjPlot::tab_model(sex_divorce_prediction, transform = "exp", file = "divorce_sex_nvdrs.html", digits = 4)
+
+
+# Eviction `eviction or move_prediction`
+sex_eviction_prediction <- glm(`eviction or move_prediction` ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_eviction_prediction)
+sjPlot::tab_model(sex_eviction_prediction, transform = "exp", file = "eviction_sex_nvdrs.html", digits = 4)
+# Break up breakup_prediction
+
+sex_breakup_prediction <- glm(breakup_prediction ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_breakup_prediction)
+sjPlot::tab_model(sex_breakup_prediction, transform = "exp", file = "breakup_sex_nvdrs.html", digits = 4)
+
+
+# Child custody loss child_prediction
+sex_child_loss_prediction <- glm(child_prediction ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_child_loss_prediction)
+sjPlot::tab_model(sex_child_loss_prediction, transform = "exp", file = "sex_child_loss_prediction_nvdrs.html", digits = 4)
+
+```
+
+
+```{r sex-topic-prediction, eval = FALSE}
+# Social isolation
+sex_social_isolation <- glm(social_isolation_prediction ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_social_isolation)
+sjPlot::tab_model(sex_social_isolation, transform = "exp", file = "social_isolation_sex_nvdrs.html", digits = 4)
+
+# Divorce divorce_prediction
+sex_divorce_prediction <- glm(divorce_prediction ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_divorce_prediction)
+sjPlot::tab_model(sex_divorce_prediction, transform = "exp", file = "divorce_sex_nvdrs.html", digits = 4)
+
+
+# Eviction `eviction or move_prediction`
+sex_eviction_prediction <- glm(`eviction or move_prediction` ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_eviction_prediction)
+sjPlot::tab_model(sex_eviction_prediction, transform = "exp", file = "eviction_sex_nvdrs.html", digits = 4)
+# Break up breakup_prediction
+
+sex_breakup_prediction <- glm(breakup_prediction ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_breakup_prediction)
+sjPlot::tab_model(sex_breakup_prediction, transform = "exp", file = "breakup_sex_nvdrs.html", digits = 4)
+
+
+# Child custody loss child_prediction
+sex_child_loss_prediction <- glm(child_prediction ~ Sex, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(sex_child_loss_prediction)
+sjPlot::tab_model(sex_child_loss_prediction, transform = "exp", file = "sex_child_loss_prediction_nvdrs.html", digits = 4)
+
+```
+
+
+```{r social-isolation-age, eval = FALSE}
+## Age
+age_social_isolation <- glm(social_isolation_prediction ~ AgeYears_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(age_social_isolation)
+sjPlot::tab_model(age_social_isolation, transform = "exp", file = "social_isolation_age_nvdrs.html", digits = 6)
+
+# Reverse, see if differences in age 
+social_isolation_age <- glm(AgeYears_c ~ social_isolation_prediction, data = nvdrs_predicted_df_cleaned1)
+summary(social_isolation_age)
+sjPlot::tab_model(social_isolation_age, file = "social_isolation_predicts_age.html", digits = 6)
+
+# divorce_prediction
+
+age_divorce_prediction <- glm(divorce_prediction ~ AgeYears_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(age_divorce_prediction)
+sjPlot::tab_model(age_divorce_prediction, transform = "exp", file = "age_divorce_prediction.html", digits = 6)
+
+# Reverse, see if differences in age 
+divorce_prediction_age <- glm(AgeYears_c ~ divorce_prediction, data = nvdrs_predicted_df_cleaned1)
+summary(divorce_prediction_age)
+sjPlot::tab_model(divorce_prediction_age, file = "divorce_predicts_age.html", digits = 6)
+
+# `eviction or move_prediction`
+age_eviction_prediction <- glm(`eviction or move_prediction` ~ AgeYears_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(age_eviction_prediction)
+sjPlot::tab_model(age_eviction_prediction, transform = "exp", file = "age_eviction_prediction.html", digits = 6)
+
+# Reverse, see if differences in age 
+eviction_prediction_age <- glm(AgeYears_c ~ `eviction or move_prediction`, data = nvdrs_predicted_df_cleaned1)
+summary(eviction_prediction_age)
+sjPlot::tab_model(eviction_prediction_age, file = "eviction_predicts_age.html", digits = 6)
+
+# breakup_prediction
+
+# Reverse, see if differences in age 
+breakup_prediction_age <- glm(AgeYears_c ~ breakup_prediction, data = nvdrs_predicted_df_cleaned1)
+summary(breakup_prediction_age)
+sjPlot::tab_model(breakup_prediction_age, file = "breakup_prediction_age.html", digits = 6)
+
+# child_prediction
+
+# Reverse, see if differences in age 
+child_prediction_age <- glm(AgeYears_c ~ child_prediction, data = nvdrs_predicted_df_cleaned1)
+summary(child_prediction_age)
+sjPlot::tab_model(child_prediction_age, file = "child_custody_prediction_age.html", digits = 6)
+
+```
+
+```{r race, eval = FALSE}
+
+## Race/Ethnicity RaceEthnicity_c
+nvdrs_predicted_df_cleaned1$RaceEthnicity_c <- as.factor(nvdrs_predicted_df_cleaned1$RaceEthnicity_c)
+nvdrs_predicted_df_cleaned1$RaceEthnicity_c <- relevel(nvdrs_predicted_df_cleaned1$RaceEthnicity_c, ref = "White, non-Hispanic")
+
+nvdrs_predicted_df_cleaned1 <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(RaceEthnicity_c != "Unknown race, non-Hispanic")
+
+race_ethnicity_social_isolation <- glm(social_isolation_prediction ~ RaceEthnicity_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(race_ethnicity_social_isolation)
+sjPlot::tab_model(race_ethnicity_social_isolation, transform = "exp", file = "social_isolation_race_nvdrs.html", digits = 4)
+
+table1(~RaceEthnicity_c, data = nvdrs_predicted_df_cleaned1)
+
+# divorce_prediction
+race_ethnicity_divorce_prediction <- glm(divorce_prediction ~ RaceEthnicity_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(race_ethnicity_divorce_prediction)
+sjPlot::tab_model(race_ethnicity_divorce_prediction, transform = "exp", file = "race_ethnicity_divorce_prediction_nvdrs.html", digits = 4)
+
+
+
+# `eviction or move_prediction`
+race_ethnicity_eviction_prediction <- glm(`eviction or move_prediction` ~ RaceEthnicity_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(race_ethnicity_eviction_prediction)
+sjPlot::tab_model(race_ethnicity_eviction_prediction, transform = "exp", file = "race_ethnicity_eviction_prediction_nvdrs.html", digits = 4)
+# breakup_prediction
+race_ethnicity_breakup_prediction <- glm(breakup_prediction ~ RaceEthnicity_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(race_ethnicity_breakup_prediction)
+sjPlot::tab_model(race_ethnicity_breakup_prediction, transform = "exp", file = "race_ethnicity_breakup_prediction_nvdrs.html", digits = 4)
+
+# child_prediction
+race_ethnicity_child_prediction<- glm(child_prediction ~ RaceEthnicity_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(race_ethnicity_child_prediction)
+sjPlot::tab_model(race_ethnicity_child_prediction, transform = "exp", file = "race_ethnicity_child_prediction_nvdrs.html", digits = 4)
+```
+
+```{r sexual-orientation, eval=FALSE}
+## SexualOrientation
+
+dplyr::count(nvdrs_predicted_df_cleaned1, SexualOrientation, sort =TRUE)
+## Filter out unknowns and blanks
+nvdrs_sexual_orientation <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(SexualOrientation != "" & SexualOrientation != "Unknown")
+nvdrs_sexual_orientation$SexualOrientation <- as.factor(nvdrs_sexual_orientation$SexualOrientation)
+nvdrs_sexual_orientation$SexualOrientation <- relevel(nvdrs_sexual_orientation$SexualOrientation, ref = "Straight/Heterosexual")
+
+sexual_orientation_social_isolation <- glm(social_isolation_prediction ~ SexualOrientation, data = nvdrs_sexual_orientation, family = "binomial")
+summary(sexual_orientation_social_isolation)
+sjPlot::tab_model(sexual_orientation_social_isolation, transform = "exp", file = "social_isolation_sexual_orientation_nvdrs.html", digits = 4)
+
+# divorce_prediction
+sexual_orientation_divorce_prediction <- glm(divorce_prediction ~ SexualOrientation, data = nvdrs_sexual_orientation, family = "binomial")
+summary(sexual_orientation_divorce_prediction)
+sjPlot::tab_model(sexual_orientation_divorce_prediction, transform = "exp", file = "sexual_orientation_divorce_prediction_nvdrs.html", digits = 4)
+
+# `eviction or move_prediction`
+sexual_orientation_eviction_prediction <- glm(`eviction or move_prediction` ~ SexualOrientation, data = nvdrs_sexual_orientation, family = "binomial")
+summary(sexual_orientation_eviction_prediction)
+sjPlot::tab_model(sexual_orientation_eviction_prediction, transform = "exp", file = "sexual_orientation_eviction_prediction_nvdrs.html", digits = 4)
+
+# breakup_prediction
+sexual_orientation_breakup_prediction <- glm(breakup_prediction ~ SexualOrientation, data = nvdrs_sexual_orientation, family = "binomial")
+summary(sexual_orientation_breakup_prediction)
+sjPlot::tab_model(sexual_orientation_breakup_prediction, transform = "exp", file = "sexual_orientation_breakup_prediction_nvdrs.html", digits = 4)
+
+
+# child_prediction
+sexual_orientation_child_prediction <- glm(child_prediction ~ SexualOrientation, data = nvdrs_sexual_orientation, family = "binomial")
+summary(sexual_orientation_child_prediction)
+sjPlot::tab_model(sexual_orientation_child_prediction, transform = "exp", file = "sexual_orientation_child_prediction_nvdrs.html", digits = 4)
+
+```
+
+```{r homeless, eval = FALSE}
+## Homeless 
+dplyr::count(nvdrs_predicted_df_cleaned1, Homeless, sort =TRUE)
+# Cleaning out blanks, unknowns 
+nvdrs_homeless <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(Homeless != "" & Homeless != "Unknown")
+homeless_social_isolation <- glm(social_isolation_prediction ~ Homeless, data = nvdrs_homeless, family = "binomial")
+summary(homeless_social_isolation)
+sjPlot::tab_model(homeless_social_isolation, transform = "exp", file = "social_isolation_homeless_nvdrs.html", digits = 4)
+
+
+# divorce_prediction
+homeless_divorce_prediction <- glm(divorce_prediction ~ Homeless, data = nvdrs_homeless, family = "binomial")
+summary(homeless_divorce_prediction)
+sjPlot::tab_model(homeless_divorce_prediction, transform = "exp", file = "homeless_divorce_prediction_nvdrs.html", digits = 4)
+
+# `eviction or move_prediction`
+homeless_eviction_prediction <- glm(`eviction or move_prediction` ~ Homeless, data = nvdrs_homeless, family = "binomial")
+summary(homeless_eviction_prediction)
+sjPlot::tab_model(homeless_eviction_prediction, transform = "exp", file = "homeless_eviction_prediction_nvdrs.html", digits = 4)
+# breakup_prediction
+homeless_breakup_prediction <- glm(breakup_prediction ~ Homeless, data = nvdrs_homeless, family = "binomial")
+summary(homeless_breakup_prediction)
+sjPlot::tab_model(homeless_breakup_prediction, transform = "exp", file = "homeless_breakup_prediction_nvdrs.html", digits = 4)
+# child_prediction
+homeless_child_prediction <- glm(child_prediction ~ Homeless, data = nvdrs_homeless, family = "binomial")
+summary(homeless_child_prediction)
+sjPlot::tab_model(homeless_child_prediction, transform = "exp", file = "homeless_child_prediction_nvdrs.html", digits = 4)
+
+## HousingInstability 
+dplyr::count(nvdrs_predicted_df_cleaned1, HousingInstability, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_HousingInstability <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(HousingInstability != "" & HousingInstability != "Unknown")
+housing_instability_social_isolation <- glm(social_isolation_prediction ~ HousingInstability, data = nvdrs_HousingInstability, family="binomial")
+summary(housing_instability_social_isolation)
+sjPlot::tab_model(housing_instability_social_isolation, transform = "exp", file = "social_isolation_housing_instability_nvdrs.html", digits = 4)
+
+
+
+
+```
+
+```{r education, eval = FALSE}
+## EducationYears
+dplyr::count(nvdrs_predicted_df_cleaned1, EducationYears, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_EducationYears <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(EducationYears != "" & EducationYears != "Unknown")
+nvdrs_EducationYears$EducationYears <- as.integer(nvdrs_EducationYears$EducationYears)
+EducationYears_social_isolation <- glm(EducationYears ~ social_isolation_prediction, data = nvdrs_EducationYears)
+summary(EducationYears_social_isolation)
+sjPlot::tab_model(EducationYears_social_isolation, file = "social_isolation_EducationYears_nvdrs.html", digits = 4)
+
+# divorce_prediction
+EducationYears_divorce_prediction <- glm(EducationYears ~ divorce_prediction, data = nvdrs_EducationYears)
+summary(EducationYears_divorce_prediction)
+sjPlot::tab_model(EducationYears_divorce_prediction, file = "EducationYears_divorce_prediction_nvdrs.html", digits = 4)
+
+
+# `eviction or move_prediction`
+EducationYears_eviction_prediction <- glm(EducationYears ~ `eviction or move_prediction`, data = nvdrs_EducationYears)
+summary(EducationYears_eviction_prediction)
+sjPlot::tab_model(EducationYears_eviction_prediction, file = "EducationYears_eviction_prediction_nvdrs.html", digits = 4)
+# breakup_prediction
+EducationYears_breakup_prediction <- glm(EducationYears ~ breakup_prediction, data = nvdrs_EducationYears)
+summary(EducationYears_breakup_prediction)
+sjPlot::tab_model(EducationYears_breakup_prediction, file = "EducationYears_breakup_prediction_nvdrs.html", digits = 4)
+
+
+# child_prediction
+EducationYears_child_prediction <- glm(EducationYears ~ child_prediction, data = nvdrs_EducationYears)
+summary(EducationYears_child_prediction)
+sjPlot::tab_model(EducationYears_child_prediction, file = "EducationYears_child_prediction_nvdrs.html", digits = 4)
+
+```
+
+```{r marital-status, eval = FALSE}
+## MaritalStatus, 
+dplyr::count(nvdrs_predicted_df_cleaned1, MaritalStatus, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_MaritalStatus <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(MaritalStatus != "" & MaritalStatus != "Unknown")
+nvdrs_MaritalStatus$MaritalStatus <- as.factor(nvdrs_MaritalStatus$MaritalStatus)
+nvdrs_MaritalStatus$MaritalStatus <- relevel(nvdrs_MaritalStatus$MaritalStatus, ref = "Married/Civil Union/Domestic Partnership", digits = 4)
+
+
+MaritalStatus_social_isolation <- glm(social_isolation_prediction ~ MaritalStatus, data = nvdrs_MaritalStatus, family = "binomial")
+summary(MaritalStatus_social_isolation)
+sjPlot::tab_model(MaritalStatus_social_isolation, transform = "exp", file = "social_isolation_MaritalStatus_nvdrs.html", digits = 4)
+
+
+# divorce_prediction
+MaritalStatus_divorce_prediction <- glm(divorce_prediction ~ MaritalStatus, data = nvdrs_MaritalStatus, family = "binomial")
+summary(MaritalStatus_divorce_prediction)
+sjPlot::tab_model(MaritalStatus_divorce_prediction, transform = "exp", file = "MaritalStatus_divorce_prediction_nvdrs.html", digits = 4)
+# `eviction or move_prediction`
+MaritalStatus_eviction_prediction <- glm(`eviction or move_prediction` ~ MaritalStatus, data = nvdrs_MaritalStatus, family = "binomial")
+summary(MaritalStatus_eviction_prediction)
+sjPlot::tab_model(MaritalStatus_eviction_prediction, transform = "exp", file = "MaritalStatus_eviction_prediction_nvdrs.html", digits = 4)
+# breakup_prediction
+MaritalStatus_breakup_prediction <- glm(breakup_prediction ~ MaritalStatus, data = nvdrs_MaritalStatus, family = "binomial")
+summary(MaritalStatus_breakup_prediction)
+sjPlot::tab_model(MaritalStatus_breakup_prediction, transform = "exp", file = "MaritalStatus_breakup_prediction_nvdrs.html", digits = 4)
+
+# child_prediction
+MaritalStatus_child_prediction <- glm(child_prediction ~ MaritalStatus, data = nvdrs_MaritalStatus, family = "binomial")
+summary(MaritalStatus_child_prediction)
+sjPlot::tab_model(MaritalStatus_child_prediction, transform = "exp", file = "MaritalStatus_child_prediction_nvdrs.html", digits = 4)
+
+
+## RelationshipStatus, 
+dplyr::count(nvdrs_predicted_df_cleaned1, RelationshipStatus, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_RelationshipStatus <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(RelationshipStatus != "" & RelationshipStatus != "Unknown")
+nvdrs_RelationshipStatus$RelationshipStatus <- as.factor(nvdrs_RelationshipStatus$RelationshipStatus)
+nvdrs_RelationshipStatus$RelationshipStatus <- relevel(nvdrs_RelationshipStatus$RelationshipStatus, ref = "Currently in a relationship")
+
+
+RelationshipStatus_social_isolation <- glm(social_isolation_prediction ~ RelationshipStatus, data = nvdrs_RelationshipStatus, family = "binomial")
+summary(RelationshipStatus_social_isolation)
+sjPlot::tab_model(RelationshipStatus_social_isolation, transform = "exp", file = "social_isolation_RelationshipStatus_nvdrs.html", digits = 4)
+
+# divorce_prediction
+RelationshipStatus_divorce_prediction <- glm(divorce_prediction ~ RelationshipStatus, data = nvdrs_RelationshipStatus, family = "binomial")
+summary(RelationshipStatus_divorce_prediction)
+sjPlot::tab_model(RelationshipStatus_divorce_prediction, transform = "exp", file = "RelationshipStatus_divorce_prediction_nvdrs.html", digits = 4)
+
+
+# `eviction or move_prediction`
+RelationshipStatus_eviction_prediction <- glm(`eviction or move_prediction` ~ RelationshipStatus, data = nvdrs_RelationshipStatus, family = "binomial")
+summary(RelationshipStatus_eviction_prediction)
+sjPlot::tab_model(RelationshipStatus_eviction_prediction, transform = "exp", file = "RelationshipStatus_eviction_prediction_nvdrs.html", digits = 4)
+
+# breakup_prediction
+RelationshipStatus_breakup_prediction <- glm(breakup_prediction ~ RelationshipStatus, data = nvdrs_RelationshipStatus, family = "binomial")
+summary(RelationshipStatus_breakup_prediction)
+sjPlot::tab_model(RelationshipStatus_breakup_prediction, transform = "exp", file = "RelationshipStatus_breakup_prediction_nvdrs.html", digits = 4)
+
+# child_prediction
+RelationshipStatus_child_prediction <- glm(child_prediction ~ RelationshipStatus, data = nvdrs_RelationshipStatus, family = "binomial")
+summary(RelationshipStatus_child_prediction)
+sjPlot::tab_model(RelationshipStatus_child_prediction, transform = "exp", file = "RelationshipStatus_child_prediction_nvdrs.html", digits = 4)
+```
+
+
+```{r transgender, eval = FALSE}
+## Transgender, 
+dplyr::count(nvdrs_predicted_df_cleaned1, Transgender, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_Transgender <- nvdrs_predicted_df_cleaned1 
+nvdrs_Transgender$Transgender <- as.factor(nvdrs_Transgender$Transgender)
+nvdrs_Transgender$Transgender <- relevel(nvdrs_Transgender$Transgender, ref = "No, Not Available, Unknown")
+
+
+Transgender_social_isolation <- glm(social_isolation_prediction ~ Transgender, data = nvdrs_Transgender, family = "binomial")
+summary(Transgender_social_isolation)
+sjPlot::tab_model(Transgender_social_isolation, transform = "exp", file = "social_isolation_Transgender_nvdrs.html", digits = 4)
+
+# divorce_prediction
+Transgender_divorce_prediction <- glm(divorce_prediction ~ Transgender, data = nvdrs_Transgender, family = "binomial")
+summary(Transgender_divorce_prediction)
+sjPlot::tab_model(Transgender_divorce_prediction, transform = "exp", file = "Transgender_divorce_prediction_nvdrs.html", digits = 4)
+
+# `eviction or move_prediction`
+Transgender_eviction_prediction <- glm(`eviction or move_prediction` ~ Transgender, data = nvdrs_Transgender, family = "binomial")
+summary(Transgender_eviction_prediction)
+sjPlot::tab_model(Transgender_eviction_prediction, transform = "exp", file = "Transgender_eviction_prediction_nvdrs.html", digits = 4)
+
+# breakup_prediction
+Transgender_breakup_prediction <- glm(breakup_prediction ~ Transgender, data = nvdrs_Transgender, family = "binomial")
+summary(Transgender_breakup_prediction)
+sjPlot::tab_model(Transgender_breakup_prediction, transform = "exp", file = "Transgender_breakup_prediction_nvdrs.html", digits = 4)
+
+# child_prediction
+Transgender_child_prediction <- glm(child_prediction ~ Transgender, data = nvdrs_Transgender, family = "binomial")
+summary(Transgender_child_prediction)
+sjPlot::tab_model(Transgender_child_prediction, transform = "exp", file = "Transgender_child_prediction_nvdrs.html", digits = 4)
+
+```
+
+
+``` {r physical-health-problem, eval = FALSE}
+
+## "PhysicalHealthProblem_c" ,
+dplyr::count(nvdrs_predicted_df_cleaned1, PhysicalHealthProblem_c, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_PhysicalHealthProblem_c <- nvdrs_predicted_df_cleaned1 
+nvdrs_PhysicalHealthProblem_c$PhysicalHealthProblem_c <- as.factor(nvdrs_PhysicalHealthProblem_c$PhysicalHealthProblem_c)
+nvdrs_PhysicalHealthProblem_c$PhysicalHealthProblem_c <- relevel(nvdrs_PhysicalHealthProblem_c$PhysicalHealthProblem_c, ref = "No, Not Available, Unknown")
+
+
+PhysicalHealthProblem_c_social_isolation <- glm(social_isolation_prediction ~ PhysicalHealthProblem_c, data = nvdrs_PhysicalHealthProblem_c, family = "binomial")
+summary(PhysicalHealthProblem_c_social_isolation)
+sjPlot::tab_model(PhysicalHealthProblem_c_social_isolation, transform = "exp", file = "social_isolation_PhysicalHealthProblem_c_nvdrs.html", digits = 4)
+
+# divorce_prediction
+PhysicalHealthProblem_c_divorce_prediction <- glm(divorce_prediction ~ PhysicalHealthProblem_c, data = nvdrs_PhysicalHealthProblem_c, family = "binomial")
+summary(PhysicalHealthProblem_c_divorce_prediction)
+sjPlot::tab_model(PhysicalHealthProblem_c_divorce_prediction, transform = "exp", file = "PhysicalHealthProblem_c_divorce_prediction_nvdrs.html", digits = 4)
+
+
+# `eviction or move_prediction`
+PhysicalHealthProblem_c_eviction_prediction <- glm(`eviction or move_prediction` ~ PhysicalHealthProblem_c, data = nvdrs_PhysicalHealthProblem_c, family = "binomial")
+summary(PhysicalHealthProblem_c_eviction_prediction)
+sjPlot::tab_model(PhysicalHealthProblem_c_eviction_prediction, transform = "exp", file = "PhysicalHealthProblem_c_eviction_prediction_nvdrs.html", digits = 4)
+
+# breakup_prediction
+PhysicalHealthProblem_c_breakup_prediction <- glm(breakup_prediction ~ PhysicalHealthProblem_c, data = nvdrs_PhysicalHealthProblem_c, family = "binomial")
+summary(PhysicalHealthProblem_c_breakup_prediction)
+sjPlot::tab_model(PhysicalHealthProblem_c_breakup_prediction, transform = "exp", file = "PhysicalHealthProblem_c_breakup_prediction_nvdrs.html", digits = 4)
+
+# child_prediction
+PhysicalHealthProblem_c_child_prediction <- glm(child_prediction ~ PhysicalHealthProblem_c, data = nvdrs_PhysicalHealthProblem_c, family = "binomial")
+summary(PhysicalHealthProblem_c_child_prediction)
+sjPlot::tab_model(PhysicalHealthProblem_c_child_prediction, transform = "exp", file = "PhysicalHealthProblem_c_child_prediction_nvdrs.html", digits = 4)
+
+## "CrisisPhysicalHealth_c" , 
+dplyr::count(nvdrs_predicted_df_cleaned1, CrisisPhysicalHealth_c, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_CrisisPhysicalHealth_c <- nvdrs_predicted_df_cleaned1 
+nvdrs_CrisisPhysicalHealth_c$CrisisPhysicalHealth_c <- as.factor(nvdrs_CrisisPhysicalHealth_c$CrisisPhysicalHealth_c)
+nvdrs_CrisisPhysicalHealth_c$CrisisPhysicalHealth_c <- relevel(nvdrs_CrisisPhysicalHealth_c$CrisisPhysicalHealth_c, ref = "No, Not Available, Unknown")
+
+
+CrisisPhysicalHealth_c_social_isolation <- glm(social_isolation_prediction ~ CrisisPhysicalHealth_c, data = nvdrs_CrisisPhysicalHealth_c, family = "binomial")
+summary(CrisisPhysicalHealth_c_social_isolation)
+sjPlot::tab_model(CrisisPhysicalHealth_c_social_isolation, transform = "exp", file = "social_isolation_CrisisPhysicalHealth_c_nvdrs.html", digits = 4)
+
+```
+
+
+```{r num-substances, eval = FALSE}
+## "NumberSubstances_c"
+dplyr::count(nvdrs_predicted_df_cleaned1, NumberSubstances_c, sort =TRUE)
+# Cleaning out blanks and unknowns 
+nvdrs_NumberSubstances_c <- nvdrs_predicted_df_cleaned1 %>% 
+  filter(!is.na(NumberSubstances_c))
+
+nvdrs_NumberSubstances_c$NumberSubstances_c <- as.integer(nvdrs_NumberSubstances_c$NumberSubstances_c)
+
+NumberSubstances_c_social_isolation <- glm(social_isolation_prediction ~ NumberSubstances_c, data = nvdrs_NumberSubstances_c, family = "binomial")
+summary(NumberSubstances_c_social_isolation)
+sjPlot::tab_model(NumberSubstances_c_social_isolation, transform = "exp", file = "social_isolation_NumberSubstances_c_nvdrs.html", digits = 4)
+
+# divorce_prediction
+NumberSubstances_c_divorce_prediction <- glm(divorce_prediction ~ NumberSubstances_c, data = nvdrs_NumberSubstances_c, family = "binomial")
+summary(NumberSubstances_c_divorce_prediction)
+sjPlot::tab_model(NumberSubstances_c_divorce_prediction, transform = "exp", file = "NumberSubstances_c_divorce_prediction_nvdrs.html", digits = 4)
+
+# `eviction or move_prediction`
+NumberSubstances_c_eviction_prediction <- glm(`eviction or move_prediction` ~ NumberSubstances_c, data = nvdrs_NumberSubstances_c, family = "binomial")
+summary(NumberSubstances_c_eviction_prediction)
+sjPlot::tab_model(NumberSubstances_c_eviction_prediction, transform = "exp", file = "NumberSubstances_c_eviction_prediction_nvdrs.html", digits = 4)
+# breakup_prediction
+NumberSubstances_c_breakup_prediction <- glm(breakup_prediction ~ NumberSubstances_c, data = nvdrs_NumberSubstances_c, family = "binomial")
+summary(NumberSubstances_c_breakup_prediction)
+sjPlot::tab_model(NumberSubstances_c_breakup_prediction, transform = "exp", file = "NumberSubstances_c_breakup_prediction_nvdrs.html", digits = 4)
+# child_prediction
+NumberSubstances_c_child_prediction <- glm(child_prediction ~ NumberSubstances_c, data = nvdrs_NumberSubstances_c, family = "binomial")
+summary(NumberSubstances_c_child_prediction)
+sjPlot::tab_model(NumberSubstances_c_child_prediction, transform = "exp", file = "NumberSubstances_c_child_prediction_nvdrs.html", digits = 4)
+```
+
+```{r similar-variables, eval = FALSE}
+# Social isolation
+## Should be negatively correlated with: "DisclosedToIntimatePartner_c", "DisclosedToOtherFamilyMember_c", "DisclosedToHealthCareWorker_c",   "DisclosedToFriend_c", "DisclosedToNeighbor_c", "DisclosedToSocialMedia_c", "DisclosedToOther_c", "DisclosedToUnknown_c"
+
+## "NumberSubstances_c"
+dplyr::count(nvdrs_predicted_df_cleaned1, DisclosedToIntimatePartner_c, sort =TRUE)
+# Cleaning out blanks and unknowns 
+
+Disclosed_to_others_c_social_isolation <- glm(social_isolation_prediction ~ DisclosedToIntimatePartner_c + DisclosedToOtherFamilyMember_c + DisclosedToHealthCareWorker_c + DisclosedToFriend_c + DisclosedToNeighbor_c + DisclosedToSocialMedia_c + DisclosedToOther_c + DisclosedToUnknown_c, data = nvdrs_predicted_df_cleaned1, family = "binomial")
+summary(Disclosed_to_others_c_social_isolation)
+sjPlot::tab_model(Disclosed_to_others_c_social_isolation, transform = "exp", file = "social_isolation_structured_comparisons.html", digits = 4)
+
+table1(~DisclosedToIntimatePartner_c + DisclosedToOtherFamilyMember_c + DisclosedToHealthCareWorker_c + DisclosedToFriend_c + DisclosedToNeighbor_c + DisclosedToSocialMedia_c + DisclosedToOther_c + DisclosedToUnknown_c|social_isolation_prediction, data = nvdrs_predicted_df_cleaned1)
+
+# Eviction/Move: "LivingTransition_c" , "EvictionOrLossOfHome_c", "HousingInstability"
+
+structured_eviction_move <- glm(`eviction or move_prediction` ~ LivingTransition_c + EvictionOrLossOfHome_c + HousingInstability, data = nvdrs_HousingInstability)
+summary(structured_eviction_move)
+sjPlot::tab_model(structured_eviction_move, transform = "exp", file = "eviction_move_structured_comparisons.html", digits = 4)
+
+
+
+# Breakup/divorce prediction: "RelationshipProblemOther_c", "CrisisIntimatePartnerProblem_c", "IntimatePartnerProblem_c" 
+# breakup_prediction
+structured_breakup_prediction <- glm(breakup_prediction ~ RelationshipProblemOther_c + CrisisIntimatePartnerProblem_c + IntimatePartnerProblem_c, data = nvdrs_predicted_df_cleaned1)
+summary(structured_breakup_prediction)
+sjPlot::tab_model(structured_breakup_prediction, transform = "exp", file = "breakup_structured_comparisons.html", digits = 4)
+
+# divorce_prediction
+structured_divorce_prediction <- glm(divorce_prediction ~ RelationshipProblemOther_c + CrisisIntimatePartnerProblem_c + IntimatePartnerProblem_c, data = nvdrs_predicted_df_cleaned1)
+summary(structured_divorce_prediction)
+sjPlot::tab_model(structured_divorce_prediction, transform = "exp", file = "divorce_structured_comparisons.html", digits = 4)
+table1(~MaritalStatus|divorce_prediction, data = nvdrs_predicted_df_cleaned1)
+
+## Child custody loss: "FamilyRelationship_c","CrisisFamilyRelationship_c","CaregiverBurden_c","FamilyStressor_c" 
+
+# child_prediction
+structured_child_prediction <- glm(child_prediction~ FamilyRelationship_c + CrisisFamilyRelationship_c + CaregiverBurden_c + FamilyStressor_c, data = nvdrs_predicted_df_cleaned1)
+summary(structured_child_prediction)
+sjPlot::tab_model(structured_child_prediction, transform = "exp", file = "child_structured_comparisons.html", digits = 4)
+
+table1(~FamilyRelationship_c + CrisisFamilyRelationship_c + CaregiverBurden_c + FamilyStressor_c|child_prediction, data = nvdrs_predicted_df_cleaned1)
+
+```
+
+
+```{r predictions-by-year}
+# Outcomes: social_isolation_prediction , breakup_prediction , divorce_prediction, `eviction or move_prediction` ,pet_prediction
+# State: SiteID
+# Year: IncidentYear
+colnames(nvdrs_predicted_df_cleaned1)
+yearly_counts <- nvdrs_predicted_df_cleaned1 %>%
+  group_by(IncidentYear) %>%
+  summarise(social_isolation_prediction_counts = sum(social_isolation_prediction),
+            breakup_prediction_counts = sum(breakup_prediction),
+            child_prediction_counts = sum(child_prediction),
+            eviction_counts = sum(`eviction or move_prediction`),
+            divorce_prediction_counts = sum(divorce_prediction))
+
+# Now, let's create the line plot
+ggplot(yearly_counts, aes(x = IncidentYear, y = social_isolation_prediction_counts)) +
+  geom_line() + # Draw the line
+  geom_point() + # Add points at each year
+  theme_minimal() + # Use a minimal theme for a cleaner look
+  labs(title = "Yearly Suicides Involving Social Isolation",
+       x = "Year",
+       y = "Count of Social Isolation Prediction") # Adding labels
+
+```
+
+```{r yearly-rate-df}
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+# Calculate the increased font sizes
+base_font_size <- 11 # Default base font size for ggplot2 themes
+increased_base_size <- base_font_size * 1.4 # Increase by 40%
+title_size <- increased_base_size * 1.2 # Title size, slightly larger than base
+axis_text_size <- increased_base_size # Axis text size
+axis_title_size <- increased_base_size # Axis title size
+
+# Assuming nvdrs_predicted_df_cleaned1 is your DataFrame
+# Calculate the total_suicides and social_isolation_prediction_counts per year
+yearly_summary <- nvdrs_predicted_df_cleaned1 %>%
+  group_by(IncidentYear) %>%
+  summarise(
+    total_suicides = n(), # Assuming each row represents a suicide case
+    social_isolation_prediction_counts = sum(social_isolation_prediction),
+    social_isolation_per_thousand = (social_isolation_prediction_counts/total_suicides)*1000,
+    breakup_prediction_counts = sum(breakup_prediction),
+    breakup_per_thousand = (breakup_prediction_counts/total_suicides)*1000,
+    child_prediction_counts = sum(child_prediction),
+    child_custody_loss_per_thousand = (child_prediction_counts/total_suicides)*1000,
+    eviction_counts = sum(`eviction or move_prediction`),
+    eviction_per_thousand = (eviction_counts/total_suicides)*1000,
+    divorce_prediction_counts = sum(divorce_prediction),
+    divorce_per_thousand = (divorce_prediction_counts/total_suicides)*1000)# Rate per 1000 suicides
+
+```
+
+```{r separate-plots}
+# Create plots for each "per_thousand" variable
+plot_social_isolation <- ggplot(yearly_summary, aes(x = IncidentYear, y = social_isolation_per_thousand)) +
+  geom_line(color = "darkgreen") +
+  geom_smooth(method = "loess", color = "black", se = FALSE, linetype = "dotted") + # Add dotted LOESS line
+  theme_minimal(base_size = increased_base_size) +
+  theme(plot.title = element_text(size = title_size),
+        axis.text = element_text(size = axis_text_size),
+        axis.title = element_text(size = axis_title_size)) +
+  labs(title = "Social Isolation Involved Suicides Rates per 1000 Suicides, per Year",
+       x = "Year",
+       y = "Rate per 1000 Suicides")
+
+plot_breakup <- ggplot(yearly_summary, aes(x = IncidentYear, y = breakup_per_thousand)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "loess", color = "black", se = FALSE, linetype = "dotted") + # Add dotted LOESS line
+  theme_minimal(base_size = increased_base_size) +
+  theme(plot.title = element_text(size = title_size),
+        axis.text = element_text(size = axis_text_size),
+        axis.title = element_text(size = axis_title_size)) +
+  labs(title = "Breakup Involved Suicides Rates per 1000 Suicides, per Year",
+       x = "Year",
+       y = "Rate per 1000 Suicides")
+
+plot_child_custody_loss <- ggplot(yearly_summary, aes(x = IncidentYear, y = child_custody_loss_per_thousand)) +
+  geom_line(color = "red") +
+  geom_smooth(method = "loess", color = "black", se = FALSE, linetype = "dotted") + # Add dotted LOESS line
+  theme_minimal(base_size = increased_base_size) +
+  theme(plot.title = element_text(size = title_size),
+        axis.text = element_text(size = axis_text_size),
+        axis.title = element_text(size = axis_title_size)) +
+  labs(title = "Child Custody Loss Involved Suicides Rates per 1000 Suicides, per Year",
+       x = "Year",
+       y = "Rate per 1000 Suicides")
+
+plot_eviction <- ggplot(yearly_summary, aes(x = IncidentYear, y = eviction_per_thousand)) +
+  geom_line(color = "purple") +
+  geom_smooth(method = "loess", color = "black", se = FALSE, linetype = "dotted") + # Add dotted LOESS line
+  theme_minimal(base_size = increased_base_size) +
+  theme(plot.title = element_text(size = title_size),
+        axis.text = element_text(size = axis_text_size),
+        axis.title = element_text(size = axis_title_size)) +
+  labs(title = "Eviction Involved Suicides Rates per 1000 Suicides, per Year",
+       x = "Year",
+       y = "Rate per 1000 Suicides")
+
+plot_divorce <- ggplot(yearly_summary, aes(x = IncidentYear, y = divorce_per_thousand)) +
+  geom_line(color = "orange") +
+  geom_smooth(method = "loess", color = "black", se = FALSE, linetype = "dotted") + # Add dotted LOESS line
+  theme_minimal(base_size = increased_base_size) +
+  theme(plot.title = element_text(size = title_size),
+        axis.text = element_text(size = axis_text_size),
+        axis.title = element_text(size = axis_title_size)) +
+  labs(title = "Divorce Involved Suicides Rates per 1000 Suicides, per Year",
+       x = "Year",
+       y = "Rate per 1000 Suicides")
+
+# Combine plots using patchwork
+combined_plots <- plot_social_isolation + plot_breakup + plot_child_custody_loss + plot_eviction + plot_divorce + 
+  plot_layout(ncol = 1) # Arrange the plots in a single column
+
+# Display the combined figure
+print(combined_plots)
+
+# Optionally, save the combined figure to a file
+ggsave("Combined_Rates_Per_1000_Suicides_Per_Year.png", combined_plots, width = 20, height = 30)
+
+
+```
+
+```{r combined-time-plot}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Assuming 'yearly_summary' is already created and contains the data
+
+# Pivot the yearly_summary dataframe to a long format for easier plotting with ggplot2
+yearly_summary_long <- yearly_summary %>%
+  pivot_longer(cols = starts_with(c("social_isolation_per_thousand", 
+                                    "breakup_per_thousand", 
+                                    "child_custody_loss_per_thousand", 
+                                    "eviction_per_thousand", 
+                                    "divorce_per_thousand")),
+               names_to = "condition", 
+               values_to = "rate_per_thousand") %>%
+  mutate(condition = factor(condition, levels = c("social_isolation_per_thousand", 
+                                                  "breakup_per_thousand", 
+                                                  "child_custody_loss_per_thousand", 
+                                                  "eviction_per_thousand", 
+                                                  "divorce_per_thousand"),
+                            labels = c("Chronic Social Isolation", "Break-up", 
+                                       "Child Custody Loss", "Eviction or Move", "Recent or Impending Divorce")))
+
+# Define color scheme for each condition
+colors <- c("Chronic Social Isolation" = "darkgreen", 
+            "Break-up" = "blue", 
+            "Child Custody Loss" = "red", 
+            "Eviction or Move" = "purple", 
+            "Recent or Impending Divorce" = "orange")
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(ggrepel) # Load the ggrepel package
+
+# Assuming 'yearly_summary_long' and colors are already defined as before
+
+# Create the multi-line graph with adjustments
+multi_line_graph <- ggplot(yearly_summary_long, aes(x = IncidentYear, y = rate_per_thousand, color = condition)) +
+  geom_line(aes(group = condition)) +
+  geom_text_repel(data = subset(yearly_summary_long, IncidentYear == max(IncidentYear)), 
+                  aes(label = condition, x = IncidentYear + 0.2, y = rate_per_thousand), 
+                  direction = "y", size = 5, 
+                  hjust = 0, vjust = 0, 
+                  nudge_x = 0.5, # Adjust this value to move labels right
+                  box.padding = 0.5, point.padding = 0.5) +
+  scale_color_manual(values = colors) +
+  theme_minimal(base_size = increased_base_size) +
+  theme(plot.title = element_text(size = title_size),
+        axis.text = element_text(size = axis_text_size),
+        axis.title = element_text(size = axis_title_size),
+        legend.position = "none", # Remove legend
+        plot.background = element_rect(fill = "white", color = NA)) + # Ensure background is white
+  labs(title = "Suicide Rates per 1000 Suicides, per Year by Condition",
+       x = "Year",
+       y = "Rate per 1000 Suicides")
+
+# Display the multi-line graph
+print(multi_line_graph)
+
+# Optionally, save the multi-line graph to a file
+ggsave("Multi_Line_Rates_Per_1000_Suicides_Per_Year_with_Repel.png", multi_line_graph, width = 20, height = 12)
+
+
+```
+
+# Maps
+```{r map-summary}
+library(dplyr)
+overall_summary <- nvdrs_predicted_df_cleaned1 %>%
+  summarise(
+    total_suicides = n(), # Assuming each row represents a suicide case
+    social_isolation_prediction_counts = sum(social_isolation_prediction),
+    social_isolation_per_thousand = (social_isolation_prediction_counts/total_suicides)*1000,
+    breakup_prediction_counts = sum(breakup_prediction),
+    breakup_per_thousand = (breakup_prediction_counts/total_suicides)*1000,
+    child_prediction_counts = sum(child_prediction),
+    child_custody_loss_per_thousand = (child_prediction_counts/total_suicides)*1000,
+    eviction_counts = sum(`eviction or move_prediction`),
+    eviction_per_thousand = (eviction_counts/total_suicides)*1000,
+    divorce_prediction_counts = sum(divorce_prediction),
+    divorce_per_thousand = (divorce_prediction_counts/total_suicides)*1000)# Rate per 1000 suicides
+overall_summary
+
+# Summarize the data by SiteID to calculate the total and the rate per 1000 suicides
+state_summary_with_rate <- nvdrs_predicted_df_cleaned1 %>%
+  filter(IncidentYear > 2014) %>% 
+  group_by(SiteID) %>%
+  summarise(
+    total_suicides = n(), # Assuming each row represents a suicide case
+    social_isolation_prediction_counts = sum(social_isolation_prediction),
+    social_isolation_per_thousand = (social_isolation_prediction_counts/total_suicides)*1000,
+    breakup_prediction_counts = sum(breakup_prediction),
+    breakup_per_thousand = (breakup_prediction_counts/total_suicides)*1000,
+    child_prediction_counts = sum(child_prediction),
+    child_custody_loss_per_thousand = (child_prediction_counts/total_suicides)*1000,
+    eviction_counts = sum(`eviction or move_prediction`),
+    eviction_per_thousand = (eviction_counts/total_suicides)*1000,
+    divorce_prediction_counts = sum(divorce_prediction),
+    divorce_per_thousand = (divorce_prediction_counts/total_suicides)*1000)# Rate per 1000 suicides
+
+gt(overall_summary)
+```
+
+
+```{r map-merge}
+library(maps)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+# Get US states map
+states_map <- st_as_sf(map("state", plot = FALSE, fill = TRUE))
+
+# Lowercase state names in the map data if needed
+states_map$ID <- str_to_title(states_map$ID)
+
+
+# Function to create a map with customizable high color for gradient fill
+create_map <- function(rate_column, rate_name, high_color) {
+  # Merge the summarized data with the map data
+  merged_data_with_rate <- merge(states_map, state_summary_with_rate, by.x = "ID", by.y = "SiteID", all.x = TRUE)
+  
+  # Replace NA values with 0 in the specified rate column
+  merged_data_with_rate[[rate_column]][is.na(merged_data_with_rate[[rate_column]])] <- 0
+  
+  # Generate the map
+  ggplot(data = merged_data_with_rate) +
+    geom_sf(aes(fill = get(rate_column)), color = "white") +
+    scale_fill_gradient(low = "white", high = high_color, name = rate_name) +
+    labs(title = paste0(rate_name, "-involved Suicides by State per 1000 Suicides")) +
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank())
+}
+
+# Define your color choices for each map
+colors <- c("brown", "red", "purple", "blue", "darkred")
+
+# Create and combine maps with specified colors
+map_social_isolation <- create_map("social_isolation_per_thousand", "Social Isolation", colors[5])
+map_breakup <- create_map("breakup_per_thousand", "Breakup", colors[2])
+map_child_custody_loss <- create_map("child_custody_loss_per_thousand", "Child Custody Loss", colors[3])
+map_eviction <- create_map("eviction_per_thousand", "Eviction", colors[4])
+map_divorce <- create_map("divorce_per_thousand", "Divorce", colors[1])
+
+# Combine the first four maps in two rows and two columns
+upper_maps <- (map_social_isolation | map_breakup) /
+              (map_child_custody_loss | map_eviction)
+
+# Adjust the size of the last map to visually align better with the others
+# This doesn't change the layout but may help in creating a more balanced visual appearance
+# Note: This approach adjusts visual aspects rather than the actual layout constraints
+
+# Combine upper maps with the last one, trying to balance visually
+final_layout <- upper_maps / 
+                (plot_spacer() | map_divorce | plot_spacer())
+
+# Display the combined figure with the specified layout
+print(final_layout)
+
+# Optionally, save the combined figure to a file
+ggsave("Adjusted_Layout_Combined_Maps.png", final_layout, width = 12, height = 18)
+
+```
+
+```{r chloropleth}
+library(ggplot2)
+
+ggplot(data = merged_data_with_rate) +
+  geom_sf(aes(fill = social_isolation_rate_per_thousand), color = "white") +
+  scale_fill_gradient(low = "white", high = "red", name = "Social Isolation\nRate per 1000 Suicides") +
+  labs(title = "Rate of Social Isolation by State per 1000 Suicides") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        panel.grid.major = element_blank(), # Remove major grid lines
+        panel.grid.minor = element_blank(), # Remove minor grid lines
+        axis.text.x = element_blank(), # Remove x-axis labels
+        axis.text.y = element_blank(), # Remove y-axis labels
+        axis.title.x = element_blank(), # Remove x-axis title
+        axis.title.y = element_blank()) # Remove y-axis title
+
+
+
+```
+```{r plotly}
+library(dplyr)
+library(plotly)
+library(sf)
+
+# Step 1: Create a mapping between state names and abbreviations
+state_abbreviations <- data.frame(
+  name = tolower(c("Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+                   "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
+                   "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
+                   "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+                   "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
+                   "New Hampshire", "New Jersey", "New Mexico", "New York",
+                   "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
+                   "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
+                   "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
+                   "West Virginia", "Wisconsin", "Wyoming")),
+  abbreviation = c("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+                   "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+                   "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+                   "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+                   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY")
+)
+
+# Assuming state_summary_with_rate is your summarized data
+# Step 2: Transform State Names in Your Data to Abbreviations
+state_summary_with_rate <- state_summary_with_rate %>%
+  left_join(state_abbreviations, by = c("SiteID" = "name")) %>%
+  select(-SiteID) %>%
+  rename(SiteID = abbreviation)
+
+library(plotly)
+
+# Assuming state_summary_with_rate is already prepared with state abbreviations in `SiteID`
+# and it includes `social_isolation_rate_per_thousand` for each state
+
+fig <- plot_ly(data = state_summary_with_rate, type = 'choropleth',
+               locationmode = 'USA-states', locations = ~SiteID,
+               z = ~social_isolation_rate_per_thousand, text = ~paste(SiteID),
+               colors = 'Reds', colorbar = list(title = "Social Isolation<br>Rate per 1000")) %>%
+  layout(title = 'Rate of Social Isolation by State per 1000 Suicides',
+         geo = list(scope = 'usa', 
+                    projection = list(type = 'albers usa'),
+                    showlakes = TRUE, 
+                    lakecolor = toRGB('white'),
+                    bgcolor = toRGB('azure')))
+
+fig
+
+
+```
+

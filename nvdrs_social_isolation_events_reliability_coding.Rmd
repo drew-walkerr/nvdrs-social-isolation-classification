@@ -1,0 +1,113 @@
+---
+title: "nvdrs_social_isolation_events_reliability"
+author: "Drew Walker"
+date: "12/21/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(irr)
+library(janitor)
+library(table1)
+library(here)
+library(gt)
+here("annotations_first_and_second_round/reliability sample/")
+here()
+```
+
+
+```{r read-and-clean-data}
+# topic name 
+topic_name <- "social_isolation"
+
+# Annotator 1 data cleaning 
+raw_annotation_data_1 <- read_csv(here("annotations_first_and_second_round/reliability sample/social_isolation_chronic_sampled_dw_completed_revised.csv")) %>% 
+  clean_names()
+one_data <- raw_annotation_data_1 %>% 
+  select(incident_id,narrative_le,matched_term_x,narrative_cme, matched_term_y,topic_relevant_annotation)
+
+# Annotator 2 data clean
+raw_annotation_data_2 <- read_csv(here("annotations_first_and_second_round/reliability sample/social_isolation_chronic_sampled_sp annotated_01.17.24.csv")) %>% 
+  clean_names()
+two_data <- raw_annotation_data_2 %>% 
+  select(incident_id,topic_relevant_annotation)
+
+
+#combined_data_clean
+combined_df_clean <- left_join(one_data,two_data, by = "incident_id")
+
+
+```
+
+# Interrater kappas 
+
+
+```{r create-users-data-and-kappa}
+# Users df
+two_data_clean <- two_data %>% 
+  select(incident_id,topic_relevant_annotation_two = topic_relevant_annotation)
+one_data_clean <- one_data %>% 
+  select(incident_id,topic_relevant_annotation_one = topic_relevant_annotation)
+
+#Join
+merged_kappa_df <- left_join(two_data_clean,one_data_clean, by = "incident_id") %>% 
+  select(topic_relevant_annotation_one,topic_relevant_annotation_two)
+
+kappa_scare_score <- irr::kappa2(merged_kappa_df)
+kappa_scare_score
+
+```
+
+# ID Disagreements 
+
+```{r disagreements}
+disagreement_df <- combined_df_clean %>% 
+  mutate(label_agree = case_when(topic_relevant_annotation.x== topic_relevant_annotation.y~1,
+                                 TRUE~0))
+
+filename1 <- paste(topic_name,"combined_nvdrs_topic_agreement_df.csv")
+write_csv(disagreement_df, filename1)
+
+table(disagreement_df$label_agree) 
+
+disagreements <- disagreement_df %>% 
+  filter(label_agree == 0) %>% 
+    mutate(label = topic_relevant_annotation.x)
+
+gt(disagreements) %>% 
+  tab_header(paste(topic_name,"Annotation Disagreements"))%>% 
+  gtsave(paste(topic_name,"annotation_disagreements.html"), inline_css = TRUE, 
+         path = here())
+
+agreements <- disagreement_df %>% 
+  filter(topic_relevant_annotation.x == 1) %>% 
+  mutate(label = topic_relevant_annotation.x)
+
+table(agreements$label)
+write_csv(agreements, paste(topic_name,"nvdrs_annotation_agreements.csv"))
+
+write_csv(disagreements, paste(topic_name,"nvdrs_disagreements_to_adjudicate.csv"))
+
+
+```
+
+# Adjudications
+## Need to change 
+```{r adjudications}
+# Change title of file 
+adjudications <- read_csv("completed_stigmatizing_word_disagreements_to_adjudicate.csv") %>% 
+  filter(!is.na(sentence_id)) 
+adjudications$column1 <- as.character(adjudications$column1)
+agreements$column1 <- as.character(agreements$column1)
+gold_standard_scare_quotes <- bind_rows(agreements,adjudications)
+
+gold_standard_scare_quotes_clean <- gold_standard_scare_quotes %>% 
+  select(sentence_id,sentence,quoted_text,label)
+write_csv(gold_standard_scare_quotes_clean, "gold_standard_stigmatizing_word_lexicon.csv")
+
+```
+
+# Testing with annie round two, before adjudications
+
