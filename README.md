@@ -10,7 +10,7 @@ https://www.cdc.gov/nvdrs/about/nvdrs-data-access.html
 
 1) nvdrs_circmustance_topic_models.ipynb : The first step in our NLP pipeline utilized this code to assess topics within the "Circumstance" summary fields, for both law enforcement and coroner medical examiner. Topics were selected by suicide and CDC Injury Prevention experts after applying BERTopic on the circumstance summary fields. This code also creates samples used for annotation/supervised classifier model training.
 
-1a) lexicon-files/ : this folder contains all word, bi-gram, and tri-gram lists which were adjudicated by study team members for regex matching in nvdrs charts. The lexica are broken up by topic, listed at the beginning of the file name. 
+1) lexicon-files/ : this folder contains all word, bi-gram, and tri-gram lists which were adjudicated by study team members for regex matching in nvdrs charts. The lexica are broken up by topic, listed at the beginning of the file name. 
 
 2) nvdrs_social_isolation_events_reliability_coding.Rmd: This file is used to calculate interrater agreement across all topics prior to supervised learning model training.
   
